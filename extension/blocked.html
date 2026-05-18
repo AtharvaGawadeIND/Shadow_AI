@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blocked by ShadowShield</title>
+    <link rel="stylesheet" href="blocked.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <div class="brand">
+          <div class="logo">SS</div>
+          <div>
+            <strong>ShadowShield Guard</strong>
+            <span>Real-time SaaS prevention</span>
+          </div>
+        </div>
+        <p class="eyebrow">Access control enforced</p>
+        <h1>BLOCKED</h1>
+        <p class="lead">This SaaS website is outside your company policy and was stopped before data could be exposed.</p>
+        <dl class="facts">
+          <div><dt>Domain</dt><dd id="domain">-</dd></div>
+          <div><dt>Risk Score</dt><dd id="risk">-</dd></div>
+          <div><dt>Employee</dt><dd id="employee">-</dd></div>
+          <div><dt>Timestamp</dt><dd id="timestamp">-</dd></div>
+        </dl>
+        <div class="reason">
+          <span>Reason</span>
+          <p id="reason">-</p>
+        </div>
+        <div class="actions">
+          <button id="request">Request Access</button>
+          <button id="back" class="secondary">Go Back</button>
+        </div>
+      </section>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const setText = (id, value) => { document.getElementById(id).textContent = value || "-"; };
+      setText("domain", params.get("domain"));
+      setText("risk", params.get("risk"));
+      setText("employee", params.get("employee"));
+      setText("reason", params.get("reason"));
+      const timestamp = params.get("timestamp");
+      setText("timestamp", timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString());
+      document.getElementById("back").addEventListener("click", () => history.back());
+      document.getElementById("request").addEventListener("click", () => {
+        const subject = encodeURIComponent(`ShadowShield access request: ${params.get("domain") || "domain"}`);
+        location.href = `mailto:security@company.com?subject=${subject}`;
+      });
+    </script>
+  </body>
+</html>
