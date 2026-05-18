@@ -351,20 +351,22 @@ export async function createPolicy(input: Omit<AccessPolicy, "_id" | "createdAt"
 
 export async function updatePolicy(id: string, input: Partial<Pick<AccessPolicy, "domain" | "toolName" | "scope" | "employeeEmail" | "action" | "reason" | "active">>) {
   const now = new Date().toISOString();
+  const definedInput = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
   if (usingMongo()) {
     await connectMongo();
     const current = plain<AccessPolicy | null>(await AccessPolicyModel.findById(id));
     if (!current) return null;
-    const next = normalizePolicy({ ...current, ...input, updatedAt: now });
+    const next = normalizePolicy({ ...current, ...definedInput, updatedAt: now });
     if (next.scope === "user" && !next.employeeEmail) throw new Error("Employee email is required for user policies");
-    const updated = plain<AccessPolicy | null>(await AccessPolicyModel.findByIdAndUpdate(id, { $set: next }, { new: true }));
+    const { _id, createdAt, ...updates } = next;
+    const updated = plain<AccessPolicy | null>(await AccessPolicyModel.findByIdAndUpdate(id, { $set: updates }, { new: true }));
     emitRealtime("POLICY_UPDATED", policyUpdatedPayload(updated));
     return updated;
   }
 
   const index = memory.policies.findIndex((policy) => policy._id === id);
   if (index === -1) return null;
-  const next = normalizePolicy({ ...memory.policies[index], ...input, updatedAt: now });
+  const next = normalizePolicy({ ...memory.policies[index], ...definedInput, updatedAt: now });
   if (next.scope === "user" && !next.employeeEmail) throw new Error("Employee email is required for user policies");
   memory.policies[index] = next;
   emitRealtime("POLICY_UPDATED", policyUpdatedPayload(next));

@@ -9,12 +9,17 @@ import { POST as upload } from "@/app/api/upload/route";
 import { POST as loadDemo } from "@/app/api/demo/load/route";
 import { GET as getAppsRoute } from "@/app/api/apps/route";
 import { PATCH as patchAppRoute } from "@/app/api/apps/[id]/route";
+import { GET as checkPolicy } from "@/app/api/policy/check/route";
+import { GET as getPolicies, POST as createPolicyRoute } from "@/app/api/policies/route";
+import { DELETE as deletePolicyRoute, PATCH as patchPolicyRoute } from "@/app/api/policies/[id]/route";
+import { PATCH as togglePolicyRoute } from "@/app/api/policies/[id]/toggle/route";
 import { POST as requestAccess } from "@/app/api/access/request/route";
 import { PATCH as approveAccess } from "@/app/api/access/[id]/approve/route";
 import { GET as getEmployeesRoute } from "@/app/api/employees/route";
 import { GET as getAlertsRoute } from "@/app/api/alerts/route";
 import { GET as getEventsRoute } from "@/app/api/events/route";
 import { getAlerts, getApps, getEmployees, getEvents } from "@/lib/store";
+import { realtimeBus } from "@/lib/realtime";
 import { NextRequest } from "next/server";
 
 function nextRequest(url: string, init?: RequestInit) {
@@ -311,5 +316,105 @@ describe("authenticated APIs", () => {
       }));
     }
     expect(response.status).toBe(429);
+  });
+});
+
+describe("access policy engine", () => {
+  it("enforces global block, user allow override, and user block priority", async () => {
+    const cookie = await loginCookie("203.0.113.150");
+
+    const globalBlock = await createPolicyRoute(authedRequest("/api/policies", cookie, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        domain: "chat.openai.com",
+        toolName: "ChatGPT",
+        scope: "global",
+        action: "block",
+        reason: "Pending enterprise review"
+      })
+    }));
+    expect(globalBlock.status).toBe(201);
+
+    let response = await checkPolicy(nextRequest("http://localhost:3000/api/policy/check?domain=chat.openai.com&employee=rahul@company.com&url=https%3A%2F%2Fchat.openai.com", {
+      headers: { "x-forwarded-for": "198.51.100.150" }
+    }));
+    expect((await response.json()).decision).toBe("BLOCK");
+
+    await createPolicyRoute(authedRequest("/api/policies", cookie, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        domain: "chat.openai.com",
+        toolName: "ChatGPT",
+        scope: "user",
+        employeeEmail: "priya@company.com",
+        action: "allow",
+        reason: "Approved pilot user"
+      })
+    }));
+
+    response = await checkPolicy(nextRequest("http://localhost:3000/api/policy/check?domain=chat.openai.com&employee=priya@company.com&url=https%3A%2F%2Fchat.openai.com", {
+      headers: { "x-forwarded-for": "198.51.100.151" }
+    }));
+    expect((await response.json()).decision).toBe("ALLOW");
+
+    await createPolicyRoute(authedRequest("/api/policies", cookie, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        domain: "chat.openai.com",
+        toolName: "ChatGPT",
+        scope: "user",
+        employeeEmail: "priya@company.com",
+        action: "block",
+        reason: "Incident response hold"
+      })
+    }));
+
+    response = await checkPolicy(nextRequest("http://localhost:3000/api/policy/check?domain=chat.openai.com&employee=priya@company.com&url=https%3A%2F%2Fchat.openai.com", {
+      headers: { "x-forwarded-for": "198.51.100.152" }
+    }));
+    expect((await response.json()).decision).toBe("BLOCK");
+  });
+
+  it("supports policy CRUD, toggle, delete, and realtime update events", async () => {
+    const cookie = await loginCookie("203.0.113.160");
+    const eventPromise = new Promise((resolve) => realtimeBus.once("POLICY_UPDATED", resolve));
+
+    const createdResponse = await createPolicyRoute(authedRequest("/api/policies", cookie, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        domain: "github.com",
+        toolName: "GitHub",
+        scope: "user",
+        employeeEmail: "contractor@company.com",
+        action: "block",
+        reason: "Contractor access restricted"
+      })
+    }));
+    const createdBody = await createdResponse.json();
+    expect(createdResponse.status).toBe(201);
+    expect(await eventPromise).toMatchObject({ domain: "github.com", employeeEmail: "contractor@company.com", action: "block" });
+
+    const id = createdBody.policy._id;
+    const patched = await patchPolicyRoute(authedRequest(`/api/policies/${id}`, cookie, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "Legal hold", action: "allow" })
+    }), { params: Promise.resolve({ id }) });
+    expect(patched.status).toBe(200);
+    expect((await patched.json()).policy.action).toBe("allow");
+
+    const toggled = await togglePolicyRoute(authedRequest(`/api/policies/${id}/toggle`, cookie, { method: "PATCH" }), { params: Promise.resolve({ id }) });
+    expect(toggled.status).toBe(200);
+    expect((await toggled.json()).policy.active).toBe(false);
+
+    const list = await getPolicies(authedRequest("/api/policies?scope=user&action=allow&search=github", cookie));
+    expect((await list.json()).policies.some((policy: { _id: string }) => policy._id === id)).toBe(true);
+
+    const deleted = await deletePolicyRoute(authedRequest(`/api/policies/${id}`, cookie, { method: "DELETE" }), { params: Promise.resolve({ id }) });
+    expect(deleted.status).toBe(200);
   });
 });
