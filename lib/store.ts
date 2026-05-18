@@ -1,12 +1,13 @@
 import { AccessRequestModel } from "@/models/AccessRequest";
+import { AccessPolicyModel } from "@/models/AccessPolicy";
 import { AlertModel } from "@/models/Alert";
 import { DetectionEventModel } from "@/models/DetectionEvent";
 import { EmployeeModel } from "@/models/Employee";
 import { SaaSAppModel } from "@/models/SaaSApp";
-import type { AccessEvent, AccessRequest, Alert, DetectionEvent, Employee, RiskLevel, SaaSApp } from "@/types";
+import type { AccessEvent, AccessPolicy, AccessRequest, Alert, DetectionEvent, Employee, PolicyAction, PolicyScope, RiskLevel, SaaSApp } from "@/types";
 import { randomUUID } from "crypto";
 import { connectMongo, usingMongo } from "./db";
-import { classifyRisk, deterministicExplanation, domainLabel, normalizeDomain } from "./risk";
+import { classifyRisk, deterministicExplanation, domainLabel, evaluateDomainAccess, normalizeDomain } from "./risk";
 import { emitRealtime } from "./realtime";
 
 type StoreState = {
@@ -16,12 +17,14 @@ type StoreState = {
   events: AccessEvent[];
   detections: DetectionEvent[];
   accessRequests: AccessRequest[];
+  policies: AccessPolicy[];
 };
 
-type ReplaceDataInput = Omit<StoreState, "events" | "detections" | "accessRequests"> & {
+type ReplaceDataInput = Omit<StoreState, "events" | "detections" | "accessRequests" | "policies"> & {
   events?: AccessEvent[];
   detections?: DetectionEvent[];
   accessRequests?: AccessRequest[];
+  policies?: AccessPolicy[];
 };
 
 const memory: StoreState = {
@@ -30,7 +33,8 @@ const memory: StoreState = {
   alerts: [],
   events: [],
   detections: [],
-  accessRequests: []
+  accessRequests: [],
+  policies: []
 };
 
 const plain = <T>(value: unknown): T => JSON.parse(JSON.stringify(value));
@@ -57,6 +61,7 @@ export async function replaceData(data: ReplaceDataInput) {
   }));
   const employees = data.employees.map((employee) => employeeMetrics({ ...employee, ...(!mongo ? { _id: employee._id ?? randomUUID() } : {}) }, apps));
   const alerts = data.alerts.map((alert) => ({ ...alert, ...(!mongo ? { _id: alert._id ?? randomUUID() } : {}) }));
+  const policies = (data.policies ?? []).map((policy) => ({ ...policy, ...(!mongo ? { _id: policy._id ?? randomUUID() } : {}) }));
 
   if (mongo) {
     await connectMongo();
@@ -65,14 +70,16 @@ export async function replaceData(data: ReplaceDataInput) {
       EmployeeModel.deleteMany({}),
       AlertModel.deleteMany({}),
       DetectionEventModel.deleteMany({}),
-      AccessRequestModel.deleteMany({})
+      AccessRequestModel.deleteMany({}),
+      AccessPolicyModel.deleteMany({})
     ]);
     await Promise.all([
       apps.length ? SaaSAppModel.insertMany(apps) : Promise.resolve(),
       employees.length ? EmployeeModel.insertMany(employees) : Promise.resolve(),
       alerts.length ? AlertModel.insertMany(alerts) : Promise.resolve(),
       data.detections?.length ? DetectionEventModel.insertMany(data.detections) : Promise.resolve(),
-      data.accessRequests?.length ? AccessRequestModel.insertMany(data.accessRequests) : Promise.resolve()
+      data.accessRequests?.length ? AccessRequestModel.insertMany(data.accessRequests) : Promise.resolve(),
+      policies.length ? AccessPolicyModel.insertMany(policies) : Promise.resolve()
     ]);
   } else {
     memory.apps = apps;
@@ -81,6 +88,7 @@ export async function replaceData(data: ReplaceDataInput) {
     memory.events = data.events ?? [];
     memory.detections = data.detections ?? [];
     memory.accessRequests = data.accessRequests ?? [];
+    memory.policies = policies;
   }
   emitRealtime("STATS_UPDATED", await getStats());
 }
@@ -283,6 +291,131 @@ export async function addAlerts(alerts: Alert[]) {
 export async function getApprovedDomains() {
   const apps = await getApps();
   return apps.filter((app) => app.approved && !app.blocked).map((app) => app.domain);
+}
+
+function normalizePolicy(policy: AccessPolicy): AccessPolicy {
+  return {
+    ...policy,
+    domain: normalizeDomain(policy.domain).replace(/[^a-z0-9.-]/g, ""),
+    toolName: policy.toolName.trim(),
+    employeeEmail: policy.scope === "user" ? (policy.employeeEmail ?? "").trim().toLowerCase() : "",
+    reason: policy.reason?.trim() ?? "",
+    active: policy.active ?? true
+  };
+}
+
+function matchesPolicy(policy: AccessPolicy, domain: string, employeeEmail: string) {
+  const normalizedDomain = normalizeDomain(domain);
+  const policyDomain = normalizeDomain(policy.domain);
+  const sameDomain = normalizedDomain === policyDomain || normalizedDomain.endsWith(`.${policyDomain}`);
+  const sameEmployee = (policy.employeeEmail ?? "").toLowerCase() === employeeEmail.toLowerCase();
+  return policy.active && sameDomain && (policy.scope === "global" || sameEmployee);
+}
+
+function policyUpdatedPayload(policy?: AccessPolicy | null) {
+  return {
+    policyId: policy?._id,
+    domain: policy?.domain,
+    employeeEmail: policy?.employeeEmail,
+    scope: policy?.scope,
+    action: policy?.action,
+    timestamp: new Date().toISOString()
+  };
+}
+
+export async function getPolicies(): Promise<AccessPolicy[]> {
+  if (usingMongo()) {
+    await connectMongo();
+    return plain(await AccessPolicyModel.find({}).sort({ createdAt: -1 }));
+  }
+  return memory.policies.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+}
+
+export async function createPolicy(input: Omit<AccessPolicy, "_id" | "createdAt" | "updatedAt">) {
+  const now = new Date().toISOString();
+  const policy = normalizePolicy({ ...input, createdAt: now, updatedAt: now });
+  if (policy.scope === "user" && !policy.employeeEmail) throw new Error("Employee email is required for user policies");
+
+  if (usingMongo()) {
+    await connectMongo();
+    const created = plain<AccessPolicy>(await AccessPolicyModel.create(policy));
+    emitRealtime("POLICY_UPDATED", policyUpdatedPayload(created));
+    return created;
+  }
+
+  const created = { _id: randomUUID(), ...policy };
+  memory.policies.unshift(created);
+  emitRealtime("POLICY_UPDATED", policyUpdatedPayload(created));
+  return created;
+}
+
+export async function updatePolicy(id: string, input: Partial<Pick<AccessPolicy, "domain" | "toolName" | "scope" | "employeeEmail" | "action" | "reason" | "active">>) {
+  const now = new Date().toISOString();
+  if (usingMongo()) {
+    await connectMongo();
+    const current = plain<AccessPolicy | null>(await AccessPolicyModel.findById(id));
+    if (!current) return null;
+    const next = normalizePolicy({ ...current, ...input, updatedAt: now });
+    if (next.scope === "user" && !next.employeeEmail) throw new Error("Employee email is required for user policies");
+    const updated = plain<AccessPolicy | null>(await AccessPolicyModel.findByIdAndUpdate(id, { $set: next }, { new: true }));
+    emitRealtime("POLICY_UPDATED", policyUpdatedPayload(updated));
+    return updated;
+  }
+
+  const index = memory.policies.findIndex((policy) => policy._id === id);
+  if (index === -1) return null;
+  const next = normalizePolicy({ ...memory.policies[index], ...input, updatedAt: now });
+  if (next.scope === "user" && !next.employeeEmail) throw new Error("Employee email is required for user policies");
+  memory.policies[index] = next;
+  emitRealtime("POLICY_UPDATED", policyUpdatedPayload(next));
+  return next;
+}
+
+export async function deletePolicy(id: string) {
+  let deleted: AccessPolicy | null = null;
+  if (usingMongo()) {
+    await connectMongo();
+    deleted = plain<AccessPolicy | null>(await AccessPolicyModel.findByIdAndDelete(id));
+  } else {
+    deleted = memory.policies.find((policy) => policy._id === id) ?? null;
+    memory.policies = memory.policies.filter((policy) => policy._id !== id);
+  }
+  if (deleted) emitRealtime("POLICY_UPDATED", policyUpdatedPayload(deleted));
+  return deleted;
+}
+
+export async function togglePolicy(id: string) {
+  const policies = await getPolicies();
+  const policy = policies.find((item) => item._id === id);
+  if (!policy) return null;
+  return updatePolicy(id, { active: !policy.active });
+}
+
+export async function evaluatePolicyAccess(input: { domain: string; employeeEmail: string }) {
+  const domain = normalizeDomain(input.domain).replace(/[^a-z0-9.-]/g, "");
+  const employeeEmail = input.employeeEmail.trim().toLowerCase();
+  const policies = (await getPolicies()).filter((policy) => matchesPolicy(policy, domain, employeeEmail));
+  const by = (scope: PolicyScope, action: PolicyAction) => policies.find((policy) => policy.scope === scope && policy.action === action);
+  const userBlock = by("user", "block");
+  const userAllow = by("user", "allow");
+  const globalBlock = by("global", "block");
+  const matched = userBlock ?? userAllow ?? globalBlock;
+
+  if (matched) {
+    const blocked = matched.action === "block";
+    return {
+      decision: blocked ? "BLOCK" as const : "ALLOW" as const,
+      riskLevel: blocked ? "HIGH" as const : "LOW" as const,
+      riskScore: blocked ? 100 : 5,
+      category: "Policy",
+      reason: matched.reason || (blocked ? "Access blocked by admin policy." : "Access allowed by admin policy."),
+      message: blocked ? "Access blocked by admin policy" : "Access allowed by admin policy",
+      policy: matched,
+      source: "policy" as const
+    };
+  }
+
+  return { ...evaluateDomainAccess({ domain, approvedDomains: await getApprovedDomains() }), source: "risk" as const };
 }
 
 export async function setAppApproval(domain: string, approved: boolean) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bell, Database, GitPullRequest, LayoutDashboard, LogOut, Shield, Users, UploadCloud } from "lucide-react";
+import { Activity, Bell, Database, GitPullRequest, LayoutDashboard, LogOut, Shield, ShieldCheck, Users, UploadCloud } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import axios from "axios";
@@ -11,6 +11,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventory", label: "Inventory", icon: UploadCloud },
   { href: "/access-requests", label: "Access Requests", icon: GitPullRequest },
+  { href: "/dashboard/policies", label: "Policies", icon: ShieldCheck },
   { href: "/events", label: "Live Events", icon: Activity },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/alerts", label: "Alerts", icon: Bell },
@@ -40,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <nav className="mt-10 space-y-2">
           {nav.map((item) => {
-            const active = pathname.startsWith(item.href);
+            const active = item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
               <Link

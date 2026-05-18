@@ -9,6 +9,7 @@ export type RealtimeEvent =
   | "APP_BLOCKED"
   | "ACCESS_REQUEST"
   | "ACCESS_APPROVED"
+  | "POLICY_UPDATED"
   | "STATS_UPDATED";
 
 declare global {

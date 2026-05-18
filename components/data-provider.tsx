@@ -67,7 +67,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const socket = io({ path: "/socket.io", transports: ["websocket", "polling"] });
-    const refreshEvents = ["NEW_DETECTION", "NEW_ALERT", "APP_APPROVED", "APP_BLOCKED", "ACCESS_REQUEST", "ACCESS_APPROVED", "STATS_UPDATED"];
+    const refreshEvents = ["NEW_DETECTION", "NEW_ALERT", "APP_APPROVED", "APP_BLOCKED", "ACCESS_REQUEST", "ACCESS_APPROVED", "POLICY_UPDATED", "STATS_UPDATED"];
     refreshEvents.forEach((event) => socket.on(event, () => syncLiveData().catch(() => undefined)));
     const id = window.setInterval(() => syncLiveData().catch(() => undefined), 10000);
     return () => {

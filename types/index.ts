@@ -2,6 +2,8 @@ export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 export type AppStatus = "approved" | "unapproved";
 export type AlertChannel = "in-app" | "email" | "slack";
 export type AccessDecision = "ALLOW" | "WARN" | "BLOCK";
+export type PolicyScope = "global" | "user";
+export type PolicyAction = "block" | "allow";
 
 export interface UploadRecord {
   employee_email: string;
@@ -91,6 +93,20 @@ export interface AccessRequest {
   requestedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+}
+
+export interface AccessPolicy {
+  _id?: string;
+  domain: string;
+  toolName: string;
+  scope: PolicyScope;
+  employeeEmail?: string;
+  action: PolicyAction;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+  active: boolean;
 }
 
 export interface DetectionResult {
