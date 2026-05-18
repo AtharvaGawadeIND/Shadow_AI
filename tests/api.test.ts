@@ -8,7 +8,9 @@ import { POST as analyze } from "@/app/api/analyze/route";
 import { POST as upload } from "@/app/api/upload/route";
 import { POST as loadDemo } from "@/app/api/demo/load/route";
 import { GET as getAppsRoute } from "@/app/api/apps/route";
-import { PATCH as patchAppRoute } from "@/app/api/apps/[domain]/route";
+import { PATCH as patchAppRoute } from "@/app/api/apps/[id]/route";
+import { POST as requestAccess } from "@/app/api/access/request/route";
+import { PATCH as approveAccess } from "@/app/api/access/[id]/approve/route";
 import { GET as getEmployeesRoute } from "@/app/api/employees/route";
 import { GET as getAlertsRoute } from "@/app/api/alerts/route";
 import { GET as getEventsRoute } from "@/app/api/events/route";
@@ -199,6 +201,39 @@ describe("check-domain API", () => {
       body: JSON.stringify({ domain: "hack-ai.xyz", url: "https://hack-ai.xyz", employeeEmail: email })
     }));
     expect((await response.json()).decision).toBe("BLOCK");
+  });
+
+  it("stores employee access requests and approval instantly unblocks the domain", async () => {
+    const cookie = await loginCookie("203.0.113.88");
+    const email = "requester@company.com";
+
+    const blocked = await checkDomain(nextRequest("http://localhost:3000/api/extension/report", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.88" },
+      body: JSON.stringify({ domain: "unknownpdf.ai", url: "https://unknownpdf.ai", employeeEmail: email })
+    }));
+    expect((await blocked.json()).decision).toBe("BLOCK");
+
+    const requestResponse = await requestAccess(nextRequest("http://localhost:3000/api/access/request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ employee: email, tool: "UnknownPDFAI", domain: "unknownpdf.ai", reason: "Finance needs to inspect a client PDF." })
+    }));
+    const requestBody = await requestResponse.json();
+    expect(requestResponse.status).toBe(200);
+    expect(requestBody.accessRequest.status).toBe("PENDING");
+
+    const approveResponse = await approveAccess(authedRequest(`/api/access/${requestBody.accessRequest._id}/approve`, cookie, { method: "PATCH" }), {
+      params: Promise.resolve({ id: requestBody.accessRequest._id })
+    });
+    expect(approveResponse.status).toBe(200);
+
+    const allowed = await checkDomain(nextRequest("http://localhost:3000/api/extension/report", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.89" },
+      body: JSON.stringify({ domain: "unknownpdf.ai", url: "https://unknownpdf.ai", employeeEmail: email })
+    }));
+    expect((await allowed.json()).decision).toBe("ALLOW");
   });
 
   it("rate limits rapid extension checks", async () => {

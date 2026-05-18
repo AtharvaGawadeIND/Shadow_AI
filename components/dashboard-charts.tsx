@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Employee, SaaSApp } from "@/types";
 import { Card, CardHeader, CardTitle } from "./ui/card";
 
@@ -17,7 +17,7 @@ export function RiskPie({ apps }: { apps: SaaSApp[] }) {
       <div className="h-64">
         <ResponsiveContainer>
           <PieChart>
-            <Pie data={data} dataKey="value" innerRadius={58} outerRadius={88} paddingAngle={4}>
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={4} label={({ name, value }) => `${name} ${value}`}>
               {data.map((entry) => <Cell key={entry.name} fill={colors[entry.name as keyof typeof colors]} />)}
             </Pie>
             <Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155" }} />
@@ -44,7 +44,9 @@ export function CategoryBar({ apps }: { apps: SaaSApp[] }) {
             <XAxis dataKey="category" stroke="#94a3b8" fontSize={11} />
             <YAxis stroke="#94a3b8" fontSize={11} />
             <Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155" }} />
-            <Bar dataKey="count" fill="#22d3ee" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="count" fill="#22d3ee" radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="count" position="top" fill="#e2e8f0" fontSize={12} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

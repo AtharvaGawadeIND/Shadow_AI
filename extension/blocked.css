@@ -71,13 +71,13 @@ h1 {
   gap: 12px;
   margin: 28px 0;
 }
-.facts div, .reason {
+.facts div, .reason, .request-reason {
   border: 1px solid rgba(148, 163, 184, .16);
   border-radius: 8px;
   background: rgba(2, 6, 23, .42);
   padding: 14px;
 }
-dt, .reason span {
+dt, .reason span, .request-reason span {
   color: #94a3b8;
   font-size: 12px;
   font-weight: 800;
@@ -93,6 +93,26 @@ dd {
   margin: 8px 0 0;
   color: #e2e8f0;
   line-height: 1.45;
+}
+.request-reason {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, .25);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, .9);
+  color: #f8fafc;
+  padding: 12px;
+  font: inherit;
+}
+.status {
+  min-height: 20px;
+  color: #67e8f9;
+  font-size: 14px;
 }
 .actions {
   display: flex;
@@ -114,6 +134,10 @@ button.secondary {
   border: 1px solid rgba(148, 163, 184, .32);
   background: rgba(15, 23, 42, .85);
   color: #e2e8f0;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
 }
 @media (max-width: 640px) {
   .facts { grid-template-columns: 1fr; }

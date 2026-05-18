@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bell, LayoutDashboard, LogOut, Shield, Users, UploadCloud } from "lucide-react";
+import { Activity, Bell, Database, GitPullRequest, LayoutDashboard, LogOut, Shield, Users, UploadCloud } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import axios from "axios";
@@ -10,9 +10,11 @@ import axios from "axios";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventory", label: "Inventory", icon: UploadCloud },
+  { href: "/access-requests", label: "Access Requests", icon: GitPullRequest },
   { href: "/events", label: "Live Events", icon: Activity },
   { href: "/employees", label: "Employees", icon: Users },
-  { href: "/alerts", label: "Alerts", icon: Bell }
+  { href: "/alerts", label: "Alerts", icon: Bell },
+  { href: "/dashboard/database", label: "Database", icon: Database }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

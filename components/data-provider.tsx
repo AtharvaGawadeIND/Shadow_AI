@@ -2,7 +2,8 @@
 
 import axios from "axios";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { AccessEvent, Alert, Employee, SaaSApp } from "@/types";
+import { io } from "socket.io-client";
+import type { AccessEvent, AccessRequest, Alert, Employee, SaaSApp } from "@/types";
 import { toast } from "sonner";
 
 type DataContextType = {
@@ -10,6 +11,7 @@ type DataContextType = {
   employees: Employee[];
   alerts: Alert[];
   events: AccessEvent[];
+  accessRequests: AccessRequest[];
   loading: boolean;
   refresh: () => Promise<void>;
   loadDemo: () => Promise<void>;
@@ -22,19 +24,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [events, setEvents] = useState<AccessEvent[]>([]);
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
   const syncLiveData = useCallback(async () => {
-    const [appsRes, employeesRes, alertsRes, eventsRes] = await Promise.all([
+    const [appsRes, employeesRes, alertsRes, eventsRes, accessRes] = await Promise.all([
       axios.get("/api/apps"),
       axios.get("/api/employees"),
       axios.get("/api/alerts"),
-      axios.get("/api/events")
+      axios.get("/api/events"),
+      axios.get("/api/access")
     ]);
     setApps(appsRes.data.apps);
     setEmployees(employeesRes.data.employees);
     setAlerts(alertsRes.data.alerts);
     setEvents(eventsRes.data.events);
+    setAccessRequests(accessRes.data.accessRequests);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -52,6 +57,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setEmployees(res.data.employees);
     setAlerts(res.data.alerts);
     setEvents([]);
+    setAccessRequests([]);
     toast.success("Demo incident loaded");
   }, []);
 
@@ -60,15 +66,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      syncLiveData().catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(id);
+    const socket = io({ path: "/socket.io", transports: ["websocket", "polling"] });
+    const refreshEvents = ["NEW_DETECTION", "NEW_ALERT", "APP_APPROVED", "APP_BLOCKED", "ACCESS_REQUEST", "ACCESS_APPROVED", "STATS_UPDATED"];
+    refreshEvents.forEach((event) => socket.on(event, () => syncLiveData().catch(() => undefined)));
+    const id = window.setInterval(() => syncLiveData().catch(() => undefined), 10000);
+    return () => {
+      refreshEvents.forEach((event) => socket.off(event));
+      socket.disconnect();
+      window.clearInterval(id);
+    };
   }, [syncLiveData]);
 
   const value = useMemo(
-    () => ({ apps, employees, alerts, events, loading, refresh, loadDemo }),
-    [apps, employees, alerts, events, loading, refresh, loadDemo]
+    () => ({ apps, employees, alerts, events, accessRequests, loading, refresh, loadDemo }),
+    [apps, employees, alerts, events, accessRequests, loading, refresh, loadDemo]
   );
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

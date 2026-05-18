@@ -13,6 +13,8 @@ async function getConfig() {
 function blockedUrl(payload) {
   const params = new URLSearchParams({
     domain: payload.domain,
+    url: payload.url,
+    tool: payload.tool || payload.domain,
     risk: String(payload.riskScore),
     reason: payload.reason,
     employee: payload.employeeEmail,
@@ -34,7 +36,7 @@ async function checkDomain(details) {
   if (!navigation) return;
 
   const config = await getConfig();
-  const response = await fetch(`${config.apiBaseUrl}/api/check-domain`, {
+  const response = await fetch(`${config.apiBaseUrl}/api/extension/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -71,6 +73,45 @@ chrome.runtime.onInstalled.addListener(async () => {
     employeeEmail: config.employeeEmail || "rahul@company.com",
     apiBaseUrl: config.apiBaseUrl || DEFAULT_API_BASE
   });
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "SHADOWSHIELD_REQUEST_ACCESS") {
+    getConfig()
+      .then((config) =>
+        fetch(`${config.apiBaseUrl}/api/access/request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employee: config.employeeEmail,
+            tool: message.payload.tool,
+            domain: message.payload.domain,
+            reason: message.payload.reason
+          })
+        })
+      )
+      .then(async (response) => sendResponse({ ok: response.ok, body: await response.json().catch(() => ({})) }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === "SHADOWSHIELD_CHECK_UNBLOCK") {
+    getConfig()
+      .then((config) =>
+        fetch(`${config.apiBaseUrl}/api/extension/report`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            domain: message.payload.domain,
+            url: message.payload.url || `https://${message.payload.domain}`,
+            employeeEmail: config.employeeEmail
+          })
+        })
+      )
+      .then(async (response) => sendResponse({ ok: response.ok, body: await response.json().catch(() => ({})) }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
 });
 
 chrome.webNavigation.onCommitted.addListener((details) => {

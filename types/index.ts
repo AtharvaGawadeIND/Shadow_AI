@@ -22,16 +22,27 @@ export interface SaaSApp {
   permissions: string[];
   employeesAffected: string[];
   approved: boolean;
+  blocked?: boolean;
   explanation: string;
   firstDetected: string;
+  lastDetected?: string;
+  usageCount?: number;
+  source?: string;
   updatedAt?: string;
 }
 
 export interface Employee {
   _id?: string;
   email: string;
+  name?: string;
   department: string;
+  requestedApps?: string[];
+  approvedApps?: string[];
+  blockedApps?: string[];
   tools: string[];
+  highestRisk?: RiskLevel;
+  totalAppsUsed?: number;
+  lastSeen?: string;
 }
 
 export interface Alert {
@@ -42,6 +53,7 @@ export interface Alert {
   employee: string;
   timestamp: string;
   channel: AlertChannel;
+  resolved?: boolean;
 }
 
 export interface AccessEvent {
@@ -56,6 +68,29 @@ export interface AccessEvent {
   timestamp: string;
   blocked: boolean;
   reason: string;
+}
+
+export interface DetectionEvent {
+  _id?: string;
+  tool: string;
+  domain: string;
+  permissions: string[];
+  employee: string;
+  rawPayload: unknown;
+  timestamp: string;
+  source: string;
+}
+
+export interface AccessRequest {
+  _id?: string;
+  employee: string;
+  tool: string;
+  domain: string;
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
 }
 
 export interface DetectionResult {

@@ -29,26 +29,17 @@
           <span>Reason</span>
           <p id="reason">-</p>
         </div>
+        <label class="request-reason">
+          <span>Business reason</span>
+          <textarea id="requestReason" rows="4" placeholder="Explain why this app is needed"></textarea>
+        </label>
+        <p id="status" class="status" aria-live="polite"></p>
         <div class="actions">
           <button id="request">Request Access</button>
           <button id="back" class="secondary">Go Back</button>
         </div>
       </section>
     </main>
-    <script>
-      const params = new URLSearchParams(location.search);
-      const setText = (id, value) => { document.getElementById(id).textContent = value || "-"; };
-      setText("domain", params.get("domain"));
-      setText("risk", params.get("risk"));
-      setText("employee", params.get("employee"));
-      setText("reason", params.get("reason"));
-      const timestamp = params.get("timestamp");
-      setText("timestamp", timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString());
-      document.getElementById("back").addEventListener("click", () => history.back());
-      document.getElementById("request").addEventListener("click", () => {
-        const subject = encodeURIComponent(`ShadowShield access request: ${params.get("domain") || "domain"}`);
-        location.href = `mailto:security@company.com?subject=${subject}`;
-      });
-    </script>
+    <script src="blocked.js"></script>
   </body>
 </html>
